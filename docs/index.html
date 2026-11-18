@@ -2,98 +2,128 @@
 <html lang="ru">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-  <meta name="theme-color" content="#eeeeed">
-  <title>sredstvo3dkosntryirovaniya — Image to 3D</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#f3f2f0">
+  <meta name="description" content="sredstvo3dkosntryirovaniya — минималистичная студия для локального TRELLIS: изображение в 3D, просмотр, экспорт GLB и PLY.">
+  <title>sredstvo3dkosntryirovaniya — студия</title>
   <link rel="stylesheet" href="app.css">
   <script src="app.js" defer></script>
 </head>
 <body>
-  <div class="app-shell">
-    <div class="cards-stage">
-      <main class="mini-app" aria-label="Генератор 3D-моделей">
-        <input type="file" id="image-input" accept="image/png,image/jpeg,image/webp" hidden>
-        <div id="dropzone" class="visual hero" role="button" tabindex="0" aria-label="Загрузить исходное изображение">
-          <div id="empty-upload" class="visual-empty">
-            <div class="hero-photo hero-sunset" aria-hidden="true"></div>
-            <span class="top-badge">✳ &nbsp;IMAGE → 3D</span>
-            <div class="hero-bottom">
-              <div class="hero-ident"><strong>Новая 3D-модель</strong><small>Из одного изображения</small></div>
+  <div class="page-ambient" aria-hidden="true"><div class="ambient-text">die Häuser scheinen auf mich zuzulaufen &nbsp;•&nbsp; über das Wasser zwischen den Bergen &nbsp;•&nbsp; im Schatten der Bäume und auf den Wegen &nbsp;•&nbsp; die kleinen Dinge verändern uns &nbsp;•&nbsp; als wir die Straße entlang gingen</div></div>
+  <div class="site-wrap">
+    <header class="topbar">
+      <div class="brand"><span>sredstvo3dkosntryirovaniya</span><span class="beta">BETA</span></div>
+      <nav class="nav" aria-label="Основная навигация">
+        <button class="nav-item active" type="button" data-view="studio">Студия</button>
+        <button class="nav-item" type="button" data-view="library">Библиотека</button>
+        <button class="nav-item" type="button" data-view="settings">Настройки</button>
+      </nav>
+      <div class="top-actions"><span id="connection-pill" class="connection-pill"><span class="online-dot"></span><span id="connection-text">Проверка подключения</span></span><button id="settings-btn" class="round-tool" type="button" aria-label="Параметры" title="Параметры"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.65" stroke-linecap="round"><path d="M4 7h16M4 17h16"/><circle cx="9" cy="7" r="2" fill="#fafafa"/><circle cx="16" cy="17" r="2" fill="#fafafa"/></svg></button></div>
+    </header>
 
-            </div>
+    <main class="studio-layout">
+      <section class="main-column" aria-label="Студия генерации">
+        <article class="main-card">
+          <input id="image-input" type="file" accept="image/png,image/jpeg,image/webp" hidden>
+          <div id="dropzone" class="hero-surface" tabindex="0" role="button" aria-label="Загрузить изображение">
+            <section id="empty-upload" class="hero-content hero-empty">
+              <span class="floating-tag"><span class="spark-mark">✣</span> IMAGE → 3D</span>
+              <div class="center-upload"><div class="lift-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5m0 0-5 5m5-5 5 5M7 19h10"/></svg></div><strong>Перетащите файл</strong><span>PNG, JPG или WebP · до 24 МБ</span><button id="choose-image" class="soft-btn" type="button"><span aria-hidden="true">▧</span> Выбрать фото</button></div>
+            </section>
+            <section id="loaded-upload" class="hero-content hero-loaded hidden">
+              <img id="uploaded-image" alt="Загруженное фото объекта">
+              <span class="floating-tag">✣ ИСХОДНОЕ ФОТО</span>
+              <div class="image-credit"><div><strong id="image-name">image.png</strong><small id="image-meta">Изображение для 3D</small></div><button id="replace-image" type="button" class="soft-btn">Заменить</button></div>
+            </section>
+            <section id="hero-generating" class="hero-content hero-generating hidden" aria-live="polite">
+              <span class="floating-tag"><span class="spin-small">✣</span> ГЕНЕРАЦИЯ 3D · <span id="hero-stage-num">ЭТАП 1/4</span></span>
+              <div class="generating-center"><div class="lift-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="m12 2 8.2 4.6v10.6L12 22l-8.2-4.8V6.6L12 2Z"/><path d="M3.8 6.6 12 12l8.2-5.4M12 12v10"/></svg></div><strong id="hero-generation-label">Загрузка нейросети</strong><span id="hero-generation-hint">TRELLIS работает на вашем компьютере</span><div id="stage-dots" class="stage-dots"><i class="active"></i><i></i><i></i><i></i></div></div>
+              <div class="prompt-chip">✣ <span>Генерация по вашему изображению</span><span class="prompt-close">×</span></div>
+            </section>
+            <section id="result-media" class="hero-content hero-result hidden">
+              <div class="viewer-head"><span class="glass-tag">◇ GLB · <span id="viewer-label">3D-модель</span></span><div class="switch-pill"><button id="show-video" type="button">Видео</button><button id="show-3d" type="button" class="selected">3D</button></div></div>
+              <video id="preview-video" class="viewer-asset hidden" autoplay loop muted playsinline controls aria-label="Видео 360 градусов"></video>
+              <model-viewer id="model-view" class="viewer-asset hidden" camera-controls auto-rotate shadow-intensity="0.8" exposure="1" environment-image="neutral" alt="Созданная 3D-модель"></model-viewer>
+              <div id="viewer-placeholder" class="viewer-placeholder"><div class="viewer-orbits"></div><div class="cube-center"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="m12 2 8.2 4.6v10.6L12 22l-8.2-4.8V6.6L12 2Z"/><path d="M3.8 6.6 12 12l8.2-5.4M12 12v10"/></svg></div></div>
+              <div class="viewer-bottom"><span>↖ Перетащите, чтобы вращать</span><div><button id="reset-view" type="button" title="Сбросить вид">⟳</button><button id="fullscreen-view" type="button" title="На весь экран">⛶</button></div></div>
+            </section>
           </div>
-          <div id="loaded-upload" class="visual-image hidden">
-            <img id="uploaded-image" alt="Загруженное изображение">
-            <div class="image-shade"></div>
-            <span id="visual-status" class="image-badge">Готово к генерации</span>
-            <div class="image-footer"><span id="image-name">image.png</span><button id="replace-image" type="button">Заменить ↗</button></div>
+
+          <div class="card-details">
+            <section id="summary-empty" class="summary-mode">
+              <div class="summary-heading"><div><h1 id="empty-title">Новая 3D-модель</h1><p>Из одной фотографии · TRELLIS · FP16</p></div><span class="summary-emblem">◉</span></div>
+              <div class="triple-meta"><div><b>PNG · JPG</b><small>Форматы</small></div><div><b>24 МБ</b><small>Максимум</small></div><div><b>FP16</b><small>Локальная модель</small></div></div>
+              <p class="serif-copy">Загрузите фотографию объекта — керамику, дерево, ткань. Модель собирается на вашем компьютере: без облака, очередей и суточных квот. Готовый файл экспортируется в GLB или PLY.</p>
+              <button id="generate-btn" class="primary-btn hidden" type="button">✣ &nbsp; Создать 3D-модель <span>↗</span></button>
+              <button id="expand-params" class="bottom-expand" type="button" title="Параметры генерации" aria-label="Открыть параметры">⌃</button>
+            </section>
+
+            <section id="progress-card" class="summary-mode hidden" aria-live="polite">
+              <div class="summary-heading"><div><h1>Генерация 3D</h1><p id="progress-stage-label">Этап 1 из 4 · запуск</p></div><span id="progress-percent" class="summary-emblem percent-badge">1/4</span></div>
+              <div class="progress-track"><div id="progress-fill"></div></div>
+              <div class="triple-meta"><div><b id="elapsed">00:00</b><small>Прошло</small></div><div><b id="eta">—</b><small>Осталось ≈</small></div><div><b>FP16</b><small>Режим</small></div></div>
+              <p id="progress-desc" class="serif-copy">Геометрия собирается из одной фотографии. После обработки начнётся экспорт файлов.</p>
+              <div class="inline-actions"><button id="cancel-btn" class="text-btn" type="button">Остановить генерацию</button><button id="logs-toggle" class="mini-action" type="button">↗ Журнал</button></div>
+            </section>
+
+            <section id="summary-result" class="summary-mode hidden">
+              <div class="summary-heading"><div><h1>Модель готова</h1><p id="duration-text">Генерация завершена</p></div><span class="summary-emblem complete-badge">✓✓</span></div>
+              <div class="triple-meta"><div><b id="result-size">—</b><small>Формат</small></div><div><b id="result-seed">—</b><small>Seed</small></div><div><b id="result-texture">512 px</b><small>Текстура</small></div></div>
+              <div class="result-actions"><a id="download-primary" class="download-primary" href="#" download>↓ &nbsp; Скачать GLB</a><button id="open-folder" class="soft-btn" type="button">▱ &nbsp; Открыть папку</button></div>
+              <p class="serif-copy">Модель сохранена в локальную папку результатов. GLB можно открыть в Blender, Unity или Unreal; PLY — использовать для дальнейшей обработки.</p>
+              <button id="new-image" class="bottom-expand" type="button">Создать ещё ↗</button>
+            </section>
+
+            <section id="advanced-settings" class="summary-mode hidden">
+              <div class="summary-heading"><div><h1>Параметры генерации</h1><p>Применяются к следующему запуску</p></div><span class="summary-emblem">☷</span></div>
+              <div class="settings-fields">
+                <div class="settings-line"><label for="quality-select">Качество</label><div id="quality-select" class="segmented"><button type="button" data-preset="economy" class="active">Экономно</button><button type="button" data-preset="balanced">Баланс</button><button type="button" data-preset="quality">Детально</button></div></div>
+                <div class="settings-line"><label>Текстура</label><div class="segmented"><button type="button" data-texture="512" class="active">512</button><button type="button" data-texture="1024">1024</button><button type="button" data-texture="2048">2048</button></div><select id="texture_size" class="sr-only"><option value="512">512</option><option value="1024">1024</option><option value="2048">2048</option></select></div>
+                <div class="settings-line"><label>Экспорт</label><div class="checks"><label class="pill-check"><input id="export_glb" type="checkbox" checked> GLB</label><label class="pill-check"><input id="export_ply" type="checkbox"> PLY</label><span class="pill-muted">MP4 — превью</span></div></div>
+                <div class="settings-line"><label for="seed">Seed</label><div class="seed-wrap"><input id="seed" type="number" min="0" max="2147483647" value="0"><label class="seed-random"><input id="random_seed" type="checkbox" checked> Случайный</label></div></div>
+              </div>
+              <details class="fine-details"><summary>Тонкая настройка генерации</summary><div class="fine-grid"><label>Шаги структуры<input id="ss_steps" type="number" min="1" max="50" value="8"></label><label>Шаги деталей<input id="slat_steps" type="number" min="1" max="50" value="8"></label><label>Сила структуры<input id="ss_guidance" type="number" min="0" max="10" step="0.1" value="7.5"></label><label>Сила деталей<input id="slat_guidance" type="number" min="0" max="10" step="0.1" value="3"></label><label>Упрощение<input id="simplify" type="number" min="0.90" max="0.98" step="0.01" value="0.95"></label></div></details>
+              <p class="field-hint">Для 6–8 ГБ VRAM начните с «Экономно» и текстуры 512 px.</p>
+              <div class="action-row"><button id="settings-generate" type="button" class="primary-btn">✣ &nbsp; Создать 3D <span>↗</span></button><button id="settings-return" type="button" class="square-btn" title="Вернуться в студию">↶</button></div>
+            </section>
           </div>
-          <div id="result-media" class="visual-result hidden">
-            <model-viewer id="model-view" class="hidden" camera-controls auto-rotate shadow-intensity=".8" exposure="1" alt="Готовая 3D-модель" environment-image="neutral"></model-viewer>
-            <video id="preview-video" class="hidden" autoplay loop muted playsinline controls></video>
-            <div class="result-tabs"><button id="show-video" type="button" class="active">Видео</button><button id="show-3d" type="button">3D ↗</button></div>
-          </div>
-          <button id="generate-btn" type="button" class="hero-button floating-generate"><span id="generate-label">Создать 3D</span><span class="button-sparkle">↗</span></button>
-        </div>
-        <div class="card-copy">
-          <header class="app-header">
-            <div><h1>Средство для 3D</h1><p class="subheading">Мини-студия для локального TRELLIS</p></div>
-            <div class="header-actions"><span id="connection-pill" class="local-pill"><i></i>Локально</span><button id="settings-btn" class="icon-button" type="button" aria-label="Пути к TRELLIS" title="Настройки">⚙</button></div>
-          </header>
-          <div class="thin-line"></div>
-          <div class="metrics">
-            <div><b>FP16</b><small>Режим</small></div>
-            <div><b id="elapsed-compact">00:00</b><small>Прошло</small></div>
-            <div><b id="eta-compact">—</b><small>Осталось ≈</small></div>
-            <div class="mini-route" title="Изображение → 3D-модель" aria-hidden="true"><svg viewBox="0 0 110 65" fill="none"><path d="M10 24c10-16 19-7 25 7s19 4 27 10 15 4 20-8 20-16 20 1c0 15-8 19-20 18H42C14 54 3 43 10 24Z" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><circle cx="35" cy="31" r="2.7" fill="currentColor"/><circle cx="82" cy="33" r="2.7" fill="currentColor"/></svg></div>
-          </div>
-          <div class="status-line"><span id="result-state"><i class="status-dot"></i> Добавь изображение для генерации</span><span id="seed-display">GLB / PLY</span></div>
-          <p class="description">Загрузи фотографию объекта, чтобы создать 3D-модель. Нажми на изображение выше — и выбери свой файл. Генерация идёт на твоём компьютере, без суточных квот.</p>
-          <section id="progress-card" class="progress-box hidden" aria-live="polite">
-            <div class="progress-top"><strong id="progress-title">Подготовка</strong><span id="stage-counter">1 / 4</span></div>
-            <div class="progress-track"><div id="progress-fill"></div></div>
-            <p id="progress-desc">TRELLIS обрабатывает изображение</p>
-            <div class="time-pair"><span>Прошло <b id="elapsed">00:00</b></span><span>Осталось ≈ <b id="eta">—</b></span></div>
-            <button id="cancel-btn" class="text-action hidden" type="button">Остановить генерацию</button>
-          </section>
-          <section id="downloads-area" class="downloads-area hidden">
-            <div class="download-title"><span class="success-icon">✓</span><b>Модель готова</b><span id="duration-text" class="duration-text"></span></div>
-            <div id="downloads-list" class="download-links"></div>
-            <button id="open-folder" class="under-link hidden" type="button">Открыть папку ↗</button><button id="new-image" class="under-link" type="button">Новое фото ↗</button>
-          </section>
-          <section id="public-help" class="public-help hidden"><strong>Это веб-версия интерфейса.</strong><p>GitHub Pages не запускает нейросеть. Для генерации запусти <code>start-local.bat</code> из проекта на своём ПК.</p><a href="http://127.0.0.1:7867/" target="_blank" rel="noopener">Открыть локальную студию ↗</a></section>
-          <div class="bottom-row"><button id="advanced-toggle" class="subtle-toggle" type="button" aria-expanded="false">Параметры <span>⌄</span></button><button id="history-toggle" class="subtle-toggle" type="button" aria-expanded="false">История <span>⌄</span></button></div>
-          <section id="advanced-settings" class="drawer hidden" aria-label="Параметры генерации">
-            <div class="drawer-title">Качество</div>
-            <div class="presets"><button class="preset active" type="button" data-preset="economy">Экономно</button><button class="preset" type="button" data-preset="balanced">Баланс</button><button class="preset" type="button" data-preset="quality">Детально</button></div>
-            <div class="drawer-title divider-top">Экспорт</div>
-            <div class="check-line"><label><input type="checkbox" id="export_glb" checked> GLB</label><label><input type="checkbox" id="export_ply"> PLY</label></div>
-            <div class="field-grid"><label>Текстура <select id="texture_size"><option value="512">512 px</option><option value="1024">1024 px</option><option value="2048">2048 px</option></select></label><label>Упрощение <select id="simplify"><option value="0.90">0.90</option><option value="0.95" selected>0.95</option><option value="0.98">0.98</option></select></label></div>
-            <div class="drawer-title divider-top">Дополнительно</div>
-            <div class="field-grid"><label>Структура <input id="ss_steps" type="number" min="1" max="50" value="8"></label><label>Детали <input id="slat_steps" type="number" min="1" max="50" value="8"></label><label>Сила структуры <input id="ss_guidance" type="number" min="0" max="10" step=".1" value="7.5"></label><label>Сила деталей <input id="slat_guidance" type="number" min="0" max="10" step=".1" value="3"></label></div>
-            <div class="seed-line"><label>Seed <input id="seed" type="number" min="0" max="2147483647" value="0"></label><label class="check-inline"><input type="checkbox" id="random_seed" checked> Случайный</label></div>
-            <p class="field-hint">Для 6–8 ГБ VRAM начни с режима «Экономно» и текстуры 512 px.</p>
-          </section>
-          <section id="history-panel" class="drawer hidden"><div class="drawer-title">Последние модели</div><div id="history-items"><p class="field-hint">Пока нет результатов.</p></div></section>
-          <section id="settings-panel" class="drawer hidden" aria-label="Пути к TRELLIS и результатам">
-            <div class="drawer-title">Локальная установка</div>
-            <label class="path-field">Папка TRELLIS <div class="path-input"><input id="trellis_path" placeholder="D:\AI\TRELLIS" spellcheck="false"><button type="button" class="browse" data-target="trellis_path">⋯</button></div></label>
-            <label class="path-field">Папка результатов <div class="path-input"><input id="output_path" placeholder="D:\AI\TRELLIS-Results" spellcheck="false"><button type="button" class="browse" data-target="output_path">⋯</button></div></label>
-            <button id="save-settings" class="save-btn" type="button">Сохранить</button>
-            <p class="field-hint">Нужна установленная локальная версия TRELLIS FP16. Не запускай Gradio одновременно со студией.</p>
-          </section>
-          <div class="footer-links"><button id="logs-toggle" type="button">Журнал ошибок ↗</button><span>SREDSTVO · 3D</span></div>
-          <pre id="logs" class="logs hidden"></pre>
-          <div class="expand-mark" aria-hidden="true">⌃</div>
-        </div>
-      </main>
-      <aside class="reference-card" aria-label="История моделей">
-        <div class="right-hero"><div class="hero-photo hero-snow" aria-hidden="true"></div><div class="right-hero-bottom"><div><strong>Твои модели</strong><small>История генераций</small></div><button id="right-open-btn" type="button">Открыть</button></div></div>
-        <button id="right-chevron" class="right-chevron" type="button" aria-label="Открыть историю">⌄</button>
+        </article>
+        <pre id="logs" class="logs hidden" aria-label="Журнал TRELLIS"></pre>
+      </section>
+
+      <aside class="side-column">
+        <section id="side-studio" class="side-mode">
+          <div class="feature-pair"><article class="featured-mini"><span class="small-flag">GLB</span><div class="mini-cube">⬡</div><div class="featured-bottom"><div><strong>Керамическая ваза</strong><small>Пример интерфейса</small></div><button type="button" class="feature-open" data-demo-card>Открыть</button></div></article><article class="featured-mini"><span class="small-flag">GLB</span><div class="mini-cube">⬡</div><div class="featured-bottom"><div><strong>Кожаный ботинок</strong><small>Пример интерфейса</small></div><button type="button" class="feature-open" data-demo-card>Открыть</button></div></article></div>
+          <section class="side-card"><div class="side-card-head"><strong>Недавние модели</strong><button type="button" class="plain-link" id="open-library">Вся библиотека ↗</button></div><div id="history-items" class="recent-list"><p class="empty-library">Здесь появятся ваши модели после первой генерации.</p></div></section>
+          <div class="install-strip"><span>▱ &nbsp; <span id="path-summary">Локальный TRELLIS · Python 3.11</span></span><span id="installation-status">○ Не проверено</span></div>
+          <div id="public-help" class="public-help hidden"><strong>Это публичная веб-версия интерфейса.</strong> Для настоящей генерации TRELLIS запустите <code>start-local.bat</code> на ПК и откройте <a href="http://127.0.0.1:7867/">локальный сайт</a>. GitHub Pages не запускает GPU-модель.</div>
+        </section>
+
+        <section id="side-progress" class="side-mode hidden">
+          <div class="side-tools"><button id="progress-preview" type="button" class="soft-btn">⬡ &nbsp; Превью в 3D</button><button id="progress-retry" type="button" class="soft-btn">♧ &nbsp; Новый вариант</button><button id="progress-notify" type="button" class="soft-btn">♧ &nbsp; Уведомить о готовности</button></div>
+          <section class="side-card"><div class="side-card-head"><strong>Этапы генерации</strong><span id="total-estimate">Оценка после первого запуска</span></div><div id="stages-list" class="stage-list"><div data-stage="loading"><i>○</i><span>Загрузка нейросети</span><small>—</small></div><div data-stage="preparing"><i>○</i><span>Подготовка изображения</span><small>—</small></div><div data-stage="generating"><i>○</i><span>Генерация 3D</span><small>—</small></div><div data-stage="exporting"><i>○</i><span>Экспорт модели</span><small>—</small></div></div><div class="stage-note">◷ &nbsp; Прогресс показан по этапам; это не точный процент вычислений.</div></section>
+          <section class="log-panel"><div class="log-head"><span>Журнал</span><span class="log-live">live</span></div><pre id="log-preview">Ожидание запуска…</pre></section>
+        </section>
+
+        <section id="side-result" class="side-mode hidden">
+          <div class="side-tools"><button id="download-ply-short" type="button" class="soft-btn">↓ &nbsp; Скачать PLY</button><button id="result-retry" type="button" class="soft-btn">♧ &nbsp; Вариант заново</button><button id="share-result" type="button" class="soft-btn">♧ &nbsp; Поделиться</button><button id="save-library" type="button" class="soft-btn">▣ &nbsp; В библиотеку</button></div>
+          <section class="side-card"><div class="side-card-head"><strong>Файлы</strong><button id="result-open-folder" type="button" class="plain-link">Показать в папке ↗</button></div><div id="downloads-list" class="files-list"></div></section>
+          <section class="side-card"><div class="side-card-head"><strong>Параметры запуска</strong><button id="result-edit-settings" type="button" class="plain-link">Изменить ↗</button></div><div id="result-params" class="param-summary"><div><small>Режим</small><strong>FP16</strong></div><div><small>Seed</small><strong id="result-params-seed">—</strong></div><div><small>Текстура</small><strong id="result-params-texture">—</strong></div><div><small>Экспорт</small><strong id="result-params-export">—</strong></div></div></section>
+        </section>
+
+        <section id="settings-panel" class="side-mode hidden">
+          <div class="side-tools"><button id="save-preset" type="button" class="soft-btn">▣ &nbsp; Сохранить пресет</button><button id="reset-preset" type="button" class="soft-btn">↶ &nbsp; Сбросить настройки</button></div>
+          <section class="side-card preset-card"><div class="side-card-head"><strong>Пресеты</strong><button id="manual-settings" type="button" class="plain-link">Настроить вручную ↗</button></div><div class="preset-rows"><button type="button" data-preset="economy" class="preset-row selected"><span class="radio-ring"></span><span><strong>Экономно</strong><small>6–8 ГБ VRAM · текстура 512 px</small></span><em>рекомендуем</em></button><button type="button" data-preset="balanced" class="preset-row"><span class="radio-ring"></span><span><strong>Баланс</strong><small>10–12 ГБ VRAM · текстура 1024 px</small></span></button><button type="button" data-preset="quality" class="preset-row"><span class="radio-ring"></span><span><strong>Детально</strong><small>16 ГБ+ VRAM · текстура 2048 px</small></span></button></div></section>
+          <section class="side-card"><div class="side-card-head"><strong>Установка</strong><span class="side-muted">Локальная версия</span></div><div class="install-fields"><label>Папка TRELLIS<div><input id="trellis_path" type="text" spellcheck="false" placeholder="D:\AI\TRELLIS"><button type="button" class="browse-btn" data-target="trellis_path">Изменить</button></div></label><label>Папка результатов<div><input id="output_path" type="text" spellcheck="false" placeholder="D:\AI\TRELLIS-Results"><button type="button" class="browse-btn" data-target="output_path">Изменить</button></div></label><div><span class="install-label">Окружение</span><span class="install-env">Python 3.11 · TRELLIS FP16</span><button id="verify-install" type="button" class="browse-btn">Проверить</button></div></div><button id="save-settings" class="save-settings" type="button">Сохранить пути</button></section>
+          <div class="install-strip"><span>◉ &nbsp; Режим FP16 · видеопамять зависит от GPU</span><span>Локально</span></div>
+        </section>
+
+        <section id="side-library" class="side-mode hidden"><section class="side-card library-card"><div class="side-card-head"><strong>Библиотека моделей</strong><button id="library-back" type="button" class="plain-link">← Студия</button></div><div id="library-items" class="library-list"><p class="empty-library">Здесь появятся ваши модели после первой генерации.</p></div></section></section>
       </aside>
-    </div>
-    <div class="tiny-caption">SREDSTVO3DKOSNTRYIROVANIYA · IMAGE TO 3D</div>
+    </main>
+    <footer class="page-footer"><span>SREDSTVO 3D · LOCAL EDITION</span><span>Создано для работы с TRELLIS · без суточных квот</span></footer>
   </div>
-  <div id="toast" class="toast hidden" role="status"></div>
+  <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
 </body>
 </html>
