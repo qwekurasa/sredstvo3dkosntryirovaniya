@@ -1,0 +1,2 @@
+# No third-party Python dependencies for the local web interface.
+# TRELLIS dependencies remain in your existing TRELLIS/code/venv.
