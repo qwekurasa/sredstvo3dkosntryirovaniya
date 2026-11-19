@@ -22,7 +22,7 @@ import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-APP_TITLE = 'Sredstvo 3D'
+APP_TITLE = 'Средство 3D'
 WORKER_EVENT = 'ATELIER_EVENT:'
 STAGES = ['loading', 'preparing', 'generating', 'exporting']
 STAGE_NAMES = {
@@ -333,6 +333,20 @@ class JobManager:
 manager = JobManager()
 
 
+def gpu_status():
+    """Read-only information from NVIDIA utility, never fabricate VRAM values."""
+    try:
+        done = subprocess.run(
+            ['nvidia-smi', '--query-gpu=name,memory.total,memory.used',
+             '--format=csv,noheader,nounits'], capture_output=True, text=True,
+            timeout=3, check=True, creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0)
+        )
+        name, total, used = (x.strip() for x in done.stdout.splitlines()[0].split(',')[:3])
+        return {'name': name[:100], 'total_mib': int(total), 'used_mib': int(used)}
+    except (OSError, ValueError, IndexError, subprocess.SubprocessError):
+        return {'name': None, 'total_mib': None, 'used_mib': None}
+
+
 class Handler(BaseHTTPRequestHandler):
     server_version = 'TRELLIS-Atelier/1.0'
 
@@ -398,6 +412,8 @@ class Handler(BaseHTTPRequestHandler):
         url = urllib.parse.urlparse(self.path).path
         if url == '/api/settings':
             return self.json_response(manager.settings_get())
+        if url == '/api/system':
+            return self.json_response(gpu_status())
         if url == '/api/status':
             return self.json_response(manager.status_get())
         if url == '/api/history':
@@ -421,6 +437,8 @@ class Handler(BaseHTTPRequestHandler):
             '/mountain-amber.svg': ('mountain-amber.svg','image/svg+xml'),
             '/mountain-blue.svg': ('mountain-blue.svg','image/svg+xml'),
         }
+        if url == '/api/health':
+            return self.json_response({'ok': True, 'product': 'Sredstvo3D'})
         if url in static_map:
             filename, mime = static_map[url]
             return self.serve_file(ROOT / 'docs' / filename, mime)
@@ -433,6 +451,12 @@ class Handler(BaseHTTPRequestHandler):
         return json.loads(self.rfile.read(n).decode('utf-8'))
 
     def do_POST(self):
+        # Block cross-site form submissions to local service (loopback-only API).
+        origin = self.headers.get('Origin')
+        if origin:
+            parsed = urllib.parse.urlparse(origin)
+            if parsed.scheme not in ('http', 'https') or parsed.hostname not in ('127.0.0.1', 'localhost') or parsed.port != 7867:
+                return self.json_response({'error': 'Запрос отклонён: неверный Origin'}, 403)
         url = urllib.parse.urlparse(self.path).path
         try:
             if url == '/api/upload':
@@ -507,8 +531,8 @@ def main():
     else:
         try:
             import webview
-            webview.create_window(APP_TITLE, url, width=436, height=696,
-                                  min_size=(390, 540), background_color='#ededed',
+            webview.create_window(APP_TITLE, url, width=1320, height=900,
+                                  min_size=(940, 650), background_color='#ededed',
                                   js_api=NativeApi())
             webview.start(debug=False)
         except ImportError:
