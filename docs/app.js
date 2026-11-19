@@ -1,205 +1,56 @@
 'use strict';
-// Static GitHub Pages provides the design. Only the local Python service runs TRELLIS.
 const $ = id => document.getElementById(id);
-const all = selector => [...document.querySelectorAll(selector)];
-const LOCAL = ['127.0.0.1', 'localhost'].includes(location.hostname) && location.port === '7867';
-const STAGES = ['loading', 'preparing', 'generating', 'exporting'];
-const STAGE_NAMES = {loading:'Загрузка нейросети', preparing:'Подготовка изображения', generating:'Собираем геометрию', exporting:'Экспорт модели'};
-const STAGE_HINTS = {loading:'Загружаем модель TRELLIS в память',preparing:'Подготавливаем фото для генерации',generating:'Создание 3D — длительность зависит от вашего GPU',exporting:'Сохраняем файлы GLB / PLY'};
-const PRESETS = {
-  economy:{ss_steps:8,slat_steps:8,texture_size:512},
-  balanced:{ss_steps:12,slat_steps:12,texture_size:1024},
-  quality:{ss_steps:20,slat_steps:20,texture_size:2048}
-};
-const state = {local:LOCAL,view:'studio',imageFile:null,imageId:null,imageURL:null,job:null,history:[],historyMode:false,settingSnapshot:null,notifyOnFinish:false,selectedPreset:'economy',waitingToStart:false,lastJobStatus:null,toastTimer:0,viewerReady:false,view3d:false};
-
-const FORMAT = {glb:['model.glb','Готов к использованию'],ply:['model.ply','Без текстуры, для скульптинга'],preview:['preview.mp4','Видео 360°']};
-const filesize = n => n<1024*1024 ? (n/1024).toFixed(0)+' КБ' : (n/1024/1024).toFixed(1)+' МБ';
-function fmtTime(v){if(v==null || !Number.isFinite(Number(v)))return '—';let n=Math.max(0,Math.round(Number(v)));return String(Math.floor(n/60)).padStart(2,'0')+':'+String(n%60).padStart(2,'0')}
-function fmtEta(n){return n==null?'—':Number(n)<60?'< 1 мин':'≈ '+Math.ceil(Number(n)/60)+' мин'}
-function toast(text,error=false){const el=$('toast');el.textContent=text;el.classList.toggle('error',!!error);el.classList.remove('hidden');clearTimeout(state.toastTimer);state.toastTimer=setTimeout(()=>el.classList.add('hidden'),4900)}
-async function api(endpoint,opts={}){let response=await fetch('/api/'+endpoint,{cache:'no-store',...opts});let data;try{data=await response.json()}catch{throw Error('Не удалось получить ответ локального TRELLIS')}if(!response.ok)throw Error(data?.error||'Ошибка локального сервера');return data}
-const post=(endpoint,data)=>api(endpoint,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});
-function show(id,visible){$(id).classList.toggle('hidden',!visible)}
-function mode(){if(state.view==='settings')return 'settings';if(state.job?.status==='running')return 'generating';if(state.job?.status==='done')return 'result';return state.imageFile?'loaded':'empty'}
-function showView(view){state.view=view;render();if(view==='library')refreshHistory();if(view==='settings'&&!state.local)toast('Пути к TRELLIS сохраняются только в локальной версии')}
-function render(){
-  let m=mode();
-  document.querySelector('.main-card').classList.toggle('settings-open',state.view==='settings');
-  all('.nav-item').forEach(b=>b.classList.toggle('active',b.dataset.view===state.view));
-  ['empty-upload','loaded-upload','hero-generating','result-media'].forEach(id=>show(id,false));
-  ['summary-empty','progress-card','summary-result','advanced-settings'].forEach(id=>show(id,false));
-  ['side-studio','side-progress','side-result','settings-panel','side-library'].forEach(id=>show(id,false));
-  if(state.view==='library'){
-    show('side-library',true);
-  }else if(state.view==='settings'){
-    show('settings-panel',true);show('advanced-settings',true);
-  }else if(m==='generating'){
-    show('side-progress',true);show('progress-card',true);
-  }else if(m==='result'){
-    show('side-result',true);show('summary-result',true);
-  }else{
-    show('side-studio',true);show('summary-empty',true);
-  }
-  if(m==='generating' && state.view==='studio')show('hero-generating',true);
-  else if(m==='result' && state.view==='studio')show('result-media',true);
-  else if(state.imageFile)show('loaded-upload',true);
-  else show('empty-upload',true);
-  show('generate-btn',!!state.imageFile && !state.job?.status?.includes('running') && state.view==='studio');
-  $('empty-title').textContent=state.imageFile?'Из картинки — в 3D.':'Новая 3D-модель';
-  $('connection-text').textContent=state.local?'Локально · FP16':'Веб-интерфейс';
-  document.querySelector('.online-dot').classList.toggle('online',state.local);
-  show('public-help',!state.local && state.view==='studio');
-  $('installation-status').textContent=state.local?'✓ Локальный сервер':'○ Нужен TRELLIS';
-  $('installation-status').classList.toggle('verified',state.local);
-  $('path-summary').textContent=state.settingSnapshot?.trellis_path||'Локальный TRELLIS · FP16';
+const $$ = q => [...document.querySelectorAll(q)];
+const LOCAL = ['localhost','127.0.0.1'].includes(location.hostname) && location.port === '7867';
+const STAGES = ['loading','preparing','generating','exporting'];
+const STAGE_LABELS = ['Загрузка модели','Проверка изображения','Построение 3D','Экспорт файлов'];
+const STAGE_DETAILS = {loading:'Загружаем нейросеть в видеопамять',preparing:'Подготавливаем исходное фото',generating:'Создаём геометрию и видео предпросмотра',exporting:'Сохраняем выбранные файлы'};
+const PRESETS = {economy:{ss_steps:8,slat_steps:8,texture_size:512},balanced:{ss_steps:12,slat_steps:12,texture_size:1024},quality:{ss_steps:20,slat_steps:20,texture_size:2048}};
+const state = {imageId:null,imageFile:null,imageURL:null,job:null,history:[],settings:null,toastTimer:null,stageStart:0};
+const fmtTime = sec => {if(sec===null||sec===undefined||isNaN(sec))return '—';const s=Math.max(0,Math.round(sec));return String(Math.floor(s/60)).padStart(2,'0')+':'+String(s%60).padStart(2,'0')};
+const fmtEta = sec => sec==null?'—':sec<60?'< 1 мин':'≈ '+Math.ceil(sec/60)+' мин';
+const bytes = n => n<1024*1024 ? Math.round(n/1024)+' КБ' : (n/(1024*1024)).toFixed(1)+' МБ';
+const show = (id, visible) => $(id).classList.toggle('hidden', !visible);
+function toast(msg,error=false){const el=$('toast');el.textContent=msg;el.classList.toggle('error',error);show('toast',true);clearTimeout(state.toastTimer);state.toastTimer=setTimeout(()=>show('toast',false),4000)}
+async function api(endpoint, options={}){const res=await fetch('/api/'+endpoint,{cache:'no-store',...options});let obj;try{obj=await res.json()}catch{throw Error('Сервер не отвечает')};if(!res.ok)throw Error(obj?.error||'Ошибка запроса');return obj}
+const post=(endpoint,obj)=>api(endpoint,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(obj)});
+const fileURL = (job,name)=>'/files/'+encodeURIComponent(job.id)+'/'+name;
+function opts(){return {ss_steps:Number($('ss_steps').value),slat_steps:Number($('slat_steps').value),ss_guidance:Number($('ss_guidance').value),slat_guidance:Number($('slat_guidance').value),texture_size:Number($('texture_size').value),simplify:Number($('simplify').value),seed:Number($('seed').value)||0,random_seed:$('random_seed').checked,export_glb:$('export_glb').checked,export_ply:$('export_ply').checked}}
+function setOptions(cfg){if(!cfg)return;for(const id of ['ss_steps','slat_steps','ss_guidance','slat_guidance','texture_size','simplify','seed','trellis_path','output_path']){if(cfg[id]!==undefined)$(id).value=cfg[id]};for(const id of ['random_seed','export_glb','export_ply']){if(cfg[id]!==undefined)$(id).checked=!!cfg[id]};syncInputs()}
+function syncInputs(){ $('texture-display').textContent=$('texture_size').value+' px';$('simplify-display').textContent=Number($('simplify').value).toFixed(2);$('seed').disabled=$('random_seed').checked;$$('.format:has(input)').forEach(el=>el.classList.toggle('chosen',el.querySelector('input').checked));const selected=Object.keys(PRESETS).find(key=>Object.keys(PRESETS[key]).every(id=>PRESETS[key][id]===Number($(id).value)));$$('[data-preset]').forEach(b=>b.classList.toggle('active',b.dataset.preset===selected))}
+function preset(name){const p=PRESETS[name];if(!p)return;for(const [k,v] of Object.entries(p))$(k).value=v;syncInputs()}
+function renderStages(){const job=state.job;const status=job?.status;const idx=status==='done'?4:status==='running'?Math.max(0,STAGES.indexOf(job.stage)):0;$('stage-count').textContent=status==='done'?'4 / 4':status==='running'?`${idx+1} / 4`:'0 / 4';$('stage-list').innerHTML=STAGE_LABELS.map((label,i)=>{const done=(status==='done'||status==='running'&&i<idx),active=status==='running'&&i===idx;return `<div class="stage ${done?'done':active?'active':''}"><span class="stage-indicator">${done?'✓':''}</span><span>${label}</span></div>`}).join('')}
+function renderHistory(){const history=state.history.filter(x=>x.status==='done').slice(0,8);$('history-count').textContent=history.length;$('recent-list').replaceChildren();if(!history.length){const empty=document.createElement('div');empty.className='empty-note';empty.innerHTML='Пока нет моделей.<br>Сгенерируйте первую 3D-модель.';$('recent-list').append(empty);return}for(const item of history){const b=document.createElement('button');b.type='button';b.className='recent-item';const sw=document.createElement('span');sw.className='model-swatch';sw.innerHTML='<svg><use href="#i-box"/></svg>';const title=document.createElement('span');const t=document.createElement('b');t.textContent='Модель '+item.id.slice(9,15);const sub=document.createElement('small');const types=Object.keys(item.files||{}).filter(x=>x==='glb'||x==='ply').join(' + ').toUpperCase();sub.textContent=(types||'3D')+' · '+fmtTime((item.finished_at||0)-(item.started_at||0));title.append(t,sub);const chevron=document.createElementNS('http://www.w3.org/2000/svg','svg');const use=document.createElementNS('http://www.w3.org/2000/svg','use');use.setAttribute('href','#i-chevron');chevron.append(use);b.append(sw,title,chevron);b.onclick=()=>{if(state.job?.status==='running'){toast('Генерация ещё выполняется');return}state.job=item;render();toast('Открыта модель из истории')};$('recent-list').append(b)}}
+function render(){const job=state.job,running=job?.status==='running',done=job?.status==='done',failed=job?.status==='error',cancelled=job?.status==='cancelled',hasImage=!!state.imageFile;
+  show('source-image',hasImage);show('upload-empty',!hasImage);$('source-detail').textContent=hasImage?`${bytes(state.imageFile.size)} · ${state.imageFile.name}`:'ПОДДЕРЖИВАЕТСЯ ДО 24 МБ';$('source-meta').textContent=hasImage?'ИЗОБРАЖЕНИЕ ЗАГРУЖЕНО':'PNG · JPG · WEBP';$('replace-label').textContent=hasImage?'Заменить фото':'Выбрать изображение';$('file-pill-text').textContent=hasImage?state.imageFile.name:'Новый проект';$('file-pill-meta').textContent=done?'СОХРАНЕНО':running?'В РАБОТЕ':hasImage?'ГОТОВО':'НЕ СОХРАНЁН';
+  show('viewer-empty',!hasImage&&!running&&!done);show('viewer-preview',hasImage&&!running&&!done);show('viewer-working',running);show('viewer-result',done);show('micro-stage',running);show('download-actions',done);
+  const label=running?(job.message||STAGE_DETAILS[job.stage]||'Создание 3D'):done?'Модель готова':failed?'Ошибка генерации':cancelled?'Генерация остановлена':hasImage?'Фото готово к генерации':'Ожидание изображения';$('main-status').textContent=label;$('stage-badge').classList.toggle('complete',done);$('prompt-text').textContent=running?'Генерация на вашем компьютере…':done?'Готовая 3D-модель сохранена':'Ваше изображение → новая 3D-модель';
+  const btn=$('generate-btn'),bottom=$('bottom-cta');btn.disabled=running;bottom.disabled=running;btn.querySelector('span').textContent=done?'Создать ещё одну':running?'Генерация…':'Создать 3D';bottom.firstChild.textContent=done?'Создать ещё ':running?'В процессе ':'Создать 3D ';
+  if(running){const i=Math.max(0,STAGES.indexOf(job.stage));$('micro-stage').textContent=`ЭТАП ${i+1} / 4 · ${STAGE_LABELS[i].toUpperCase()}`;$('working-title').textContent=STAGE_LABELS[i];$('working-desc').textContent=STAGE_DETAILS[job.stage]||'Подождите…';$('working-stage').textContent=`Этап ${i+1} из 4 (прогресс по этапам)`;$('working-fill').style.width=(i*25+9)+'%';$('time-fill').style.width=(i*25+9)+'%';$('remaining-label').textContent='Осталось ≈ '+fmtEta(job.eta_sec);$('elapsed-label').textContent='ПРОШЛО '+fmtTime(job.elapsed_sec);$('cancel-btn').disabled=false}else{$('cancel-btn').disabled=true;$('time-fill').style.width=done?'100%':'0%';$('remaining-label').textContent=done?'Готово за '+fmtTime(job.elapsed_sec):'Осталось ≈ —';$('elapsed-label').textContent='ПРОШЛО '+fmtTime(job?.elapsed_sec??null).replace('—','00:00')}
+  if(done){const files=job.files||{},url=job.id;const glb=!!files.glb,ply=!!files.ply;show('download-glb',glb);show('download-ply',ply);if(glb)$('download-glb').href=fileURL(job,'model.glb');if(ply)$('download-ply').href=fileURL(job,'model.ply');const vid=$('preview-video');if(files.preview){const src=fileURL(job,'preview.mp4');if(vid.dataset.src!==src){vid.src=src;vid.dataset.src=src;vid.load();vid.play().catch(()=>{})}}show('preview-video',!!files.preview);show('no-preview',!files.preview);$('result-info').textContent='РЕЗУЛЬТАТ · '+(glb?'GLB ':'')+(ply?'PLY ':'')+' · '+fmtTime(job.elapsed_sec)}else{$('result-info').textContent=running?'TRELLIS · FP16 · ЭТАПЫ':'IMAGE → 3D · TRELLIS FP16';$('preview-video').pause()}
+  if(failed&&job.error){$('error-log').textContent=job.error+'\n'+(job.logs||[]).join('\n').slice(-6500)}
+  renderStages();renderHistory();}
+function chooseFile(){$('image-input').click()}
+async function upload(file){if(!file)return;try{if(state.job?.status==='running')throw Error('Остановите текущую генерацию');if(!/\.(png|jpe?g|webp)$/i.test(file.name))throw Error('Нужен PNG, JPG или WebP');if(file.size>24*1024*1024)throw Error('Файл больше 24 МБ');let imageId=null;if(LOCAL){const res=await fetch('/api/upload',{method:'POST',headers:{'Content-Type':file.type||'application/octet-stream'},body:file});const obj=await res.json();if(!res.ok)throw Error(obj.error||'Не удалось загрузить фото');imageId=obj.image_id}if(state.imageURL)URL.revokeObjectURL(state.imageURL);state.imageURL=URL.createObjectURL(file);state.imageFile=file;state.imageId=imageId;state.job=null;$('source-image').src=state.imageURL;$('large-input').src=state.imageURL;render();toast(LOCAL?'Фотография загружена':'Это публичное демо. Для генерации откройте приложение на ПК.')}catch(e){toast(e.message,true)}}
+async function start(){if(!LOCAL){toast('Генерация доступна в Windows-приложении на вашем ПК',true);return}if(state.job?.status==='running')return;if(!state.imageId){chooseFile();return}const options=opts();if(!options.export_glb&&!options.export_ply){toast('Выберите GLB или PLY',true);return}try{const r=await post('start',{image_id:state.imageId,settings:options});state.job={id:r.id,status:'running',stage:'loading',message:'Запускаем TRELLIS',stage_number:1,elapsed_sec:0,eta_sec:null,seed:r.seed};render();toast('Генерация запущена')}catch(e){toast(e.message,true);if(/TRELLIS|venv|папк/i.test(e.message))showSettings()}}
+async function poll(){if(!LOCAL)return;try{const job=await api('status');if(job){if((state.imageFile&&!state.job)||(state.job&&state.job.id!==job.id))return;const before=state.job?.status;state.job=job;render();if(before==='running'&&job.status!=='running'){await refreshHistory();if(job.status==='done')toast('3D-модель готова');else toast('Генерация завершилась с ошибкой — откройте настройки',true)}}}catch{}}
+async function refreshHistory(){if(!LOCAL)return;try{state.history=await api('history');renderHistory()}catch{}}
+function showSettings(){show('settings-modal',true);$('trellis_path').focus()}
+function closeSettings(){show('settings-modal',false)}
+async function saveSettings(){if(!LOCAL){toast('Пути можно настроить в локальном приложении',true);return}try{state.settings=await post('settings',{trellis_path:$('trellis_path').value,output_path:$('output_path').value});$('settings-feedback').textContent='Сохранено';toast('Настройки сохранены');setTimeout(closeSettings,500)}catch(e){$('settings-feedback').textContent=e.message;toast(e.message,true)}}
+function openFolder(){if(!state.job?.id){toast('Результаты появятся после генерации');return}if(!LOCAL){toast('Откройте локальную версию');return}post('open-folder',{id:state.job.id}).catch(e=>toast(e.message,true))}
+function showDownload(){if(!state.job||state.job.status!=='done'){toast('Экспорт будет доступен после генерации');return}const a=$('download-glb').classList.contains('hidden')?$('download-ply'):$('download-glb');if(a.classList.contains('hidden')){toast('Нет файла для скачивания');return}a.click()}
+function bind(){
+  $('image-input').addEventListener('change',e=>{upload(e.target.files?.[0]);e.target.value=''});$('dropzone').addEventListener('click',chooseFile);$('center-upload').addEventListener('click',chooseFile);$('replace-btn').addEventListener('click',chooseFile);$('remove-btn').addEventListener('click',()=>{if(state.job?.status==='running'){toast('Сначала остановите генерацию');return}if(state.imageURL)URL.revokeObjectURL(state.imageURL);state.imageFile=null;state.imageId=null;state.job=null;render()});
+  $('dropzone').addEventListener('dragover',e=>{e.preventDefault();$('dropzone').classList.add('drag')});$('dropzone').addEventListener('dragleave',()=>{$('dropzone').classList.remove('drag')});$('dropzone').addEventListener('drop',e=>{e.preventDefault();$('dropzone').classList.remove('drag');upload(e.dataTransfer.files?.[0])});
+  for(const id of ['generate-btn','bottom-cta'])$(id).addEventListener('click',()=>{if(state.job?.status==='done') {state.job=null;render()} start()});
+  $$('[data-preset]').forEach(b=>b.addEventListener('click',()=>preset(b.dataset.preset)));for(const id of ['texture_size','simplify','random_seed','ss_steps','slat_steps','export_glb','export_ply'])$(id).addEventListener('input',syncInputs);
+  $('cancel-btn').onclick=async()=>{try{await post('cancel',{});toast('Останавливаем генерацию…')}catch(e){toast(e.message,true)}};
+  for(const id of ['settings-top-btn','right-settings-btn','side-settings'])$(id).onclick=showSettings;$('close-settings').onclick=closeSettings;$('settings-modal').addEventListener('click',e=>{if(e.target===$('settings-modal'))closeSettings()});$('save-settings').onclick=saveSettings;
+  $('viewer-expand').onclick=()=>{if(!document.fullscreenElement){$('viewer').requestFullscreen?.().catch(()=>{})}else document.exitFullscreen?.().catch(()=>{})};$('viewer-open-folder').onclick=openFolder;$('side-download').onclick=showDownload;$('side-retry').onclick=chooseFile;
+  $('reset-btn').onclick=()=>{if(state.job?.status==='running'){toast('Сначала остановите генерацию');return}state.job=null;state.imageFile=null;state.imageId=null;if(state.imageURL)URL.revokeObjectURL(state.imageURL);state.imageURL=null;render()};
+  document.addEventListener('keydown',e=>{if(e.key==='Escape')closeSettings()});
 }
-function fields(){return {
-  ss_steps:Number($('ss_steps').value),slat_steps:Number($('slat_steps').value),
-  ss_guidance:Number($('ss_guidance').value),slat_guidance:Number($('slat_guidance').value),
-  seed:Number($('seed').value)||0,random_seed:$('random_seed').checked,
-  texture_size:Number($('texture_size').value),simplify:Number($('simplify').value),
-  export_glb:$('export_glb').checked,export_ply:$('export_ply').checked
-}}
-function fieldValues(settings){if(!settings)return;for(const id of ['ss_steps','slat_steps','ss_guidance','slat_guidance','seed','texture_size','simplify','trellis_path','output_path']){if(settings[id]!=null)$(id).value=settings[id]};for(const id of ['random_seed','export_glb','export_ply']){if(settings[id]!=null)$(id).checked=!!settings[id]};$('seed').disabled=$('random_seed').checked;syncPresets();syncTexture()}
-function preset(name){const v=PRESETS[name];if(!v)return;for(const [id,val]of Object.entries(v))$(id).value=val;state.selectedPreset=name;syncPresets();syncTexture()}
-function syncPresets(){let found=Object.keys(PRESETS).find(p=>PRESETS[p].ss_steps===Number($('ss_steps').value)&&PRESETS[p].slat_steps===Number($('slat_steps').value)&&PRESETS[p].texture_size===Number($('texture_size').value));state.selectedPreset=found||'custom';all('[data-preset]').forEach(b=>{b.classList.toggle('active',b.dataset.preset===found);b.classList.toggle('selected',b.dataset.preset===found)})}
-function syncTexture(){all('[data-texture]').forEach(b=>b.classList.toggle('active',Number(b.dataset.texture)===Number($('texture_size').value)))}
-all('[data-preset]').forEach(btn=>btn.addEventListener('click',()=>preset(btn.dataset.preset)));
-all('[data-texture]').forEach(btn=>btn.addEventListener('click',()=>{$('texture_size').value=btn.dataset.texture;syncTexture();syncPresets()}));
-['ss_steps','slat_steps','texture_size'].forEach(id=>$(id).addEventListener('change',syncPresets));
-$('random_seed').addEventListener('change',()=>{$('seed').disabled=$('random_seed').checked});
-function validateFile(file){if(!file)throw Error('Выберите изображение');if(!/\.(png|jpe?g|webp)$/i.test(file.name) || !['image/png','image/jpeg','image/webp',''].includes(file.type))throw Error('Поддерживаются PNG, JPG и WEBP');if(file.size>24*1024*1024)throw Error('Максимальный размер файла — 24 МБ')}
-async function upload(file){
-  try{validateFile(file);if(state.job?.status==='running')throw Error('Сначала остановите текущую генерацию');
-    if(state.local){const data=await api('upload',{method:'POST',headers:{'Content-Type':file.type||'application/octet-stream'},body:file});state.imageId=data.image_id}else{state.imageId=null}
-    if(state.imageURL)URL.revokeObjectURL(state.imageURL);state.imageURL=URL.createObjectURL(file);
-    state.imageFile=file;state.job=null;state.waitingToStart=true;state.historyMode=false;state.view='studio';$('uploaded-image').src=state.imageURL;$('image-name').textContent=file.name;$('image-meta').textContent=filesize(file.size)+' · Изображение';render();toast(state.local?'Изображение загружено':'Фото готово к просмотру. Для генерации нужен локальный TRELLIS.');
-  }catch(e){toast(e.message,true)}
-}
-$('image-input').addEventListener('change',event=>{upload(event.target.files?.[0]);event.target.value=''});
-$('choose-image').addEventListener('click',event=>{event.stopPropagation();$('image-input').click()});
-$('replace-image').addEventListener('click',event=>{event.stopPropagation();$('image-input').click()});
-$('dropzone').addEventListener('click',event=>{if(state.job?.status==='running'||event.target.closest('button,a,video,model-viewer'))return;if(!state.imageFile||!state.job)$('image-input').click()});
-$('dropzone').addEventListener('keydown',event=>{if((event.key==='Enter'||event.key===' ')&&!state.job?.status?.includes('running')){event.preventDefault();$('image-input').click()}});
-$('dropzone').addEventListener('dragover',event=>{event.preventDefault();$('dropzone').classList.add('dragover')});
-$('dropzone').addEventListener('dragleave',()=>{$('dropzone').classList.remove('dragover')});
-$('dropzone').addEventListener('drop',event=>{event.preventDefault();$('dropzone').classList.remove('dragover');upload(event.dataTransfer?.files?.[0])});
-
-async function start(){
-  if(!state.local){showView('studio');$('public-help').scrollIntoView({behavior:'smooth',block:'nearest'});toast('GitHub Pages не может запустить TRELLIS. Откройте локальный сайт на ПК.',true);return}
-  if(!state.imageId){$('image-input').click();toast('Сначала загрузите фотографию');return}
-  if(state.job?.status==='running')return;
-  if(!fields().export_glb&&!fields().export_ply){showView('settings');toast('Выберите GLB или PLY',true);return}
-  try{
-    const job=await post('start',{image_id:state.imageId,settings:fields()});
-    state.job={id:job.id,status:'running',stage:'loading',message:'Запускаем TRELLIS',stage_number:1,elapsed_sec:0,eta_sec:null,seed:job.seed,logs:[]};state.historyMode=false;state.waitingToStart=false;state.lastJobStatus='running';state.view='studio';render();updateJob(state.job);
-  }catch(e){toast(e.message,true);if(e.message.includes('TRELLIS'))showView('settings')}
-}
-$('generate-btn').addEventListener('click',start);$('settings-generate').addEventListener('click',start);
-$('cancel-btn').addEventListener('click',async()=>{if(!state.local)return;try{await post('cancel',{});toast('Останавливаем генерацию…')}catch(e){toast(e.message,true)}});
-$('expand-params').addEventListener('click',()=>showView('settings'));
-$('settings-return').addEventListener('click',()=>showView('studio'));
-$('settings-btn').addEventListener('click',()=>showView('settings'));
-all('[data-view]').forEach(b=>b.addEventListener('click',()=>showView(b.dataset.view)));
-$('open-library').addEventListener('click',()=>showView('library'));
-$('library-back').addEventListener('click',()=>showView('studio'));
-$('manual-settings').addEventListener('click',()=>{$('advanced-settings').querySelector('details').open=true;toast('Дополнительные параметры раскрыты в левой карточке')});
-$('result-edit-settings').addEventListener('click',()=>showView('settings'));
-$('new-image').addEventListener('click',()=>{$('image-input').click()});
-$('result-retry').addEventListener('click',()=>{$('image-input').click();toast('Выберите изображение для нового варианта')});
-$('progress-retry').addEventListener('click',()=>toast('Для нового варианта сначала остановите текущую генерацию'));
-$('progress-preview').addEventListener('click',()=>toast('Превью доступно после завершения генерации'));
-$('save-library').addEventListener('click',()=>{showView('library');toast('Успешные генерации автоматически сохраняются в библиотеке')});
-$('share-result').addEventListener('click',()=>toast('Модель хранится на вашем ПК. Для передачи скачайте GLB или PLY.'));
-all('[data-demo-card]').forEach(b=>b.addEventListener('click',()=>toast('Это пример карточки из макета. Ваши модели появятся после генерации.')));
-$('reset-preset').addEventListener('click',()=>{preset('economy');$('random_seed').checked=true;$('seed').disabled=true;$('export_glb').checked=true;$('export_ply').checked=false;toast('Настройки сброшены к экономному режиму')});
-$('save-preset').addEventListener('click',()=>{try{localStorage.setItem('sredstvo-preset',JSON.stringify(fields()));toast('Параметры сохранены в этом браузере')}catch{toast('Браузер запретил сохранение параметров',true)}});
-for(const btn of all('.browse-btn[data-target]'))btn.addEventListener('click',async()=>{try{if(window.pywebview?.api?.pick_folder){const chosen=await window.pywebview.api.pick_folder();if(chosen)$(btn.dataset.target).value=chosen}else toast('Введите путь вручную: браузер не имеет доступа к папкам ПК')}catch{toast('Укажите папку вручную',true)}});
-$('save-settings').addEventListener('click',async()=>{if(!state.local){toast('Сохранение путей доступно только в локальном TRELLIS',true);return}try{state.settingSnapshot=await post('settings',{trellis_path:$('trellis_path').value,output_path:$('output_path').value});toast('Пути сохранены');render()}catch(e){toast(e.message,true)}});
-$('verify-install').addEventListener('click',()=>toast(state.local?'Сервер запущен. Проверка модели произойдёт при генерации.':'Откройте локальную версию TRELLIS',!state.local));
-$('logs-toggle').addEventListener('click',()=>{show('logs',$('logs').classList.contains('hidden'));$('logs').scrollIntoView({behavior:'smooth',block:'nearest'})});
-$('progress-notify').addEventListener('click',async()=>{if(!('Notification' in window)){toast('Уведомления недоступны в этом браузере');return}const result=await Notification.requestPermission();state.notifyOnFinish=result==='granted';toast(state.notifyOnFinish?'Уведомим, когда генерация закончится':'Браузер не разрешил уведомления')});
-
-let viewerPromise;
-function ensureViewer(){if(customElements.get('model-viewer'))return Promise.resolve();if(!viewerPromise){viewerPromise=new Promise((resolve,reject)=>{const s=document.createElement('script');s.type='module';s.src='https://unpkg.com/@google/model-viewer@4.0.0/dist/model-viewer.min.js';s.onload=()=>customElements.whenDefined('model-viewer').then(resolve,reject);s.onerror=()=>reject(Error('3D-компонент недоступен'));document.head.appendChild(s);setTimeout(()=>reject(Error('3D-компонент не загрузился')),12000)})}return viewerPromise}
-function switchMedia(use3d){state.view3d=!!use3d;let hasVideo=!!state.job?.files?.preview,has3d=!!state.job?.files?.glb;show('viewer-placeholder',false);show('preview-video',!use3d&&hasVideo);show('model-view',use3d&&has3d);$('show-video').classList.toggle('selected',!use3d);$('show-3d').classList.toggle('selected',use3d);if(!use3d&&hasVideo)$('preview-video').play().catch(()=>{});else $('preview-video').pause()}
-$('show-video').addEventListener('click',()=>switchMedia(false));
-$('show-3d').addEventListener('click',async()=>{if(!state.job?.files?.glb){toast('Экспорт GLB не был выбран');return}try{await ensureViewer();switchMedia(true)}catch(e){toast('3D-плеер недоступен без интернета; видео 360° работает локально',true);switchMedia(false)}});
-$('reset-view').addEventListener('click',()=>{if(state.view3d){$('model-view').resetTurntableRotation?.()}else $('preview-video').currentTime=0});
-$('fullscreen-view').addEventListener('click',()=>{$('result-media').requestFullscreen?.().catch(()=>toast('Полноэкранный режим недоступен'))});
-function filesFor(job){let id=encodeURIComponent(job.id);return {glb:`/files/${id}/model.glb`,ply:`/files/${id}/model.ply`,preview:`/files/${id}/preview.mp4`}}
-function success(job){
-  if(!job?.files)return;
-  let urls=filesFor(job),files=job.files;
-  $('result-seed').textContent=String(job.seed??'—');$('result-params-seed').textContent=String(job.seed??'—');
-  $('result-texture').textContent=Number($('texture_size').value)+' px';$('result-params-texture').textContent=Number($('texture_size').value)+' px';
-  $('result-params-export').textContent=[files.glb?'GLB':null,files.ply?'PLY':null].filter(Boolean).join(' · ')||'Видео';
-  $('duration-text').textContent=job.elapsed_sec!=null?`Готово за ${fmtTime(job.elapsed_sec)}`:'Генерация завершена';
-  $('result-size').textContent=files.glb?'GLB':files.ply?'PLY':'Видео';
-  $('viewer-label').textContent=files.glb?'Готовая модель':'Превью';
-  $('downloads-list').replaceChildren();
-  for(const kind of ['glb','ply','preview'])if(files[kind]){
-    let row=document.createElement('div');row.className='file-row';let icon=document.createElement('span');icon.className='file-icon';icon.textContent=kind==='preview'?'▣':'⬡';let info=document.createElement('div');let title=document.createElement('strong');title.textContent=FORMAT[kind][0];let details=document.createElement('small');details.textContent=FORMAT[kind][1];info.append(title,details);let link=document.createElement('a');link.href=urls[kind];link.setAttribute('download',FORMAT[kind][0]);link.textContent='↓ Скачать';row.append(icon,info,link);$('downloads-list').append(row)
-  }
-  let mainKind=files.glb?'glb':files.ply?'ply':'preview';let main=$('download-primary');main.href=urls[mainKind];main.setAttribute('download',FORMAT[mainKind][0]);main.textContent=`↓  Скачать ${mainKind.toUpperCase()}`;
-  $('download-ply-short').disabled=!files.ply;
-  $('download-ply-short').onclick=()=>{if(files.ply)window.location.href=urls.ply};
-  if(files.preview){$('preview-video').src=urls.preview;$('preview-video').load()}
-  if(files.glb)$('model-view').setAttribute('src',urls.glb);
-  show('show-3d',!!files.glb);show('show-video',!!files.preview);
-  if(files.preview)switchMedia(false);else if(files.glb){show('viewer-placeholder',true);$('show-3d').click()}else show('viewer-placeholder',true);
-  $('open-folder').dataset.id=job.id;$('result-open-folder').dataset.id=job.id;
-  state.view='studio';render();
-}
-async function openFolder(){if(!state.local||!state.job?.id){toast('Папка доступна только в локальной версии');return}try{await post('open-folder',{id:state.job.id})}catch(e){toast(e.message,true)}}
-$('open-folder').addEventListener('click',openFolder);$('result-open-folder').addEventListener('click',openFolder);
-function updateJob(job){
-  if(!job)return;const prev=state.job?.status;state.job=job;
-  if(job.status==='running'){
-    const idx=Math.max(0,STAGES.indexOf(job.stage));
-    $('hero-stage-num').textContent=`ЭТАП ${idx+1}/4`;
-    $('hero-generation-label').textContent=STAGE_NAMES[job.stage]||'Генерация 3D';
-    $('hero-generation-hint').textContent=STAGE_HINTS[job.stage]||job.message||'TRELLIS обрабатывает изображение';
-    $('progress-stage-label').textContent=`Этап ${idx+1} из 4 · ${STAGE_NAMES[job.stage]||'Обработка'}`;
-    $('progress-percent').textContent=`${idx+1}/4`;
-    $('progress-desc').textContent=job.message||STAGE_HINTS[job.stage];
-    $('progress-fill').style.width=((idx+1)/4*100)+'%';
-    $('elapsed').textContent=fmtTime(job.elapsed_sec);
-    $('eta').textContent=fmtEta(job.eta_sec);
-    $('total-estimate').textContent=job.eta_sec!=null?`Осталось ${fmtEta(job.eta_sec)}`:'Оценка после первого запуска';
-    all('#stage-dots i').forEach((d,i)=>{d.classList.toggle('done',i<idx);d.classList.toggle('active',i===idx)});
-    all('[data-stage]').forEach((row,i)=>{row.classList.toggle('done',i<idx);row.classList.toggle('active',i===idx);let v=row.querySelector('i'),t=row.querySelector('small');v.textContent=i<idx?'✓':i===idx?'✣':'○';t.textContent=i<idx?'готово':i===idx?'идёт':'—'});
-    $('log-preview').textContent=(job.logs||[]).slice(-6).join('\n')||'Ожидание сообщений TRELLIS…';
-    $('logs').textContent=(job.logs||[]).join('\n');
-    if(state.view==='studio')render();
-  }else if(job.status==='done'){
-    if(prev!=='done'){
-      success(job);refreshHistory();if(state.notifyOnFinish&&typeof Notification!=='undefined'&&Notification.permission==='granted')new Notification('TRELLIS: 3D-модель готова!');
-    }
-  }else if(job.status==='error'||job.status==='cancelled'){
-    $('logs').textContent=(job.logs||[]).join('\n')+'\n'+(job.error||'');
-    $('log-preview').textContent=(job.logs||[]).slice(-8).join('\n')||job.message;
-    if(state.view==='studio')render();
-    if(prev==='running')toast(job.status==='error'?'Ошибка TRELLIS. Откройте журнал.':'Генерация остановлена.',job.status==='error');
-    show('logs',job.status==='error');
-  }
-}
-async function refreshStatus(){if(!state.local||state.historyMode||state.waitingToStart)return;try{let job=await api('status');if(job)updateJob(job)}catch(e){/* local service can be closing */}}
-function rowFor(job){
-  let row=document.createElement('div');row.className='recent-row';
-  let ico=document.createElement('span');ico.className='recent-icon';ico.textContent=job.files?.glb?'⬡':job.status==='done'?'▣':'◷';
-  let info=document.createElement('div');info.className='recent-info';let title=document.createElement('strong');title.textContent='Модель '+job.id.split('-').slice(0,2).join(' · ');let sub=document.createElement('small');sub.textContent=(job.status==='done'?'GLB / PLY · ':job.status==='error'?'Ошибка · ':'Остановлено · ')+fmtTime((job.finished_at||job.started_at)-job.started_at);info.append(title,sub);
-  let btn=document.createElement('button');btn.type='button';btn.textContent=job.status==='done'?'Открыть':'Журнал';btn.addEventListener('click',()=>{
-    if(job.status==='done'){state.historyMode=true;state.job={...job,elapsed_sec:Math.round((job.finished_at||job.started_at)-job.started_at)};success(state.job)}else toast('Подробности ошибки можно посмотреть в локальной студии')
-  });row.append(ico,info,btn);return row;
-}
-async function refreshHistory(){
-  if(!state.local)return;
-  try{const jobs=await api('history');state.history=Array.isArray(jobs)?jobs:[];for(const id of ['history-items','library-items']){let panel=$(id);panel.replaceChildren();if(!state.history.length){let p=document.createElement('p');p.className='empty-library';p.textContent='Здесь появятся ваши модели после первой генерации.';panel.append(p)}else for(const job of state.history.slice(0,id==='library-items'?60:4))panel.append(rowFor(job))}}
-  catch(e){/* history is optional */}
-}
-(async function init(){
-  render();
-  if(state.local){try{state.settingSnapshot=await api('settings');fieldValues(state.settingSnapshot);try{const saved=localStorage.getItem('sredstvo-preset');if(saved)fieldValues(JSON.parse(saved))}catch{}render();await refreshHistory();await refreshStatus()}catch(e){state.local=false;render();toast('Локальный сервер TRELLIS не отвечает',true)}setInterval(refreshStatus,1500)}
-})();
+async function gpu(){if(!LOCAL){$('gpu-name').textContent='Запустите Windows-приложение';$('gpu-usage').textContent='GitHub Pages не имеет доступа к GPU';return}try{const r=await api('system');$('gpu-name').textContent=r.name||'NVIDIA не обнаружена';if(r.total_mib){$('gpu-usage').textContent=`${Math.round(r.used_mib/1024*10)/10} из ${Math.round(r.total_mib/1024*10)/10} ГБ занято`;$('gpu-fill').style.width=Math.min(100,100*r.used_mib/r.total_mib)+'%'}else $('gpu-usage').textContent='Данные о видеопамяти недоступны'}catch{$('gpu-name').textContent='Не удалось определить GPU'}}
+async function init(){bind();preset('balanced');if(!LOCAL){$('connection').classList.add('offline');$('connection-text').textContent='WEB · БЕЗ GPU';$('gpu-name').textContent='GPU запускается только на ПК';$('settings-feedback').textContent='Для генерации откройте Windows-приложение';render();return}try{state.settings=await api('settings');setOptions(state.settings)}catch{toast('Не удалось прочитать настройки',true)}await refreshHistory();await poll();await gpu();setInterval(()=>{poll();gpu()},1900);render()}
+document.addEventListener('DOMContentLoaded',init);
