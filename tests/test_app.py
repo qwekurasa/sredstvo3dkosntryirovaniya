@@ -116,8 +116,8 @@ class TestMiniInterface(unittest.TestCase):
         self.assertFalse([key for key, count in Counter(ids).items() if count != 1])
         missing = set(re.findall(r"\$\('([\w-]+)'\)", js)) - set(ids)
         self.assertFalse(missing, f'UI elements missing from HTML: {missing}')
-        for field in ('image-input', 'generate-btn', 'progress-card', 'elapsed', 'eta',
-                      'result-media', 'settings-panel', 'advanced-settings', 'downloads-list'):
+        for field in ('image-input', 'generate-btn', 'viewer-working', 'elapsed-label', 'remaining-label',
+                      'viewer-result', 'settings-modal', 'advanced', 'download-actions'):
             self.assertIn(field, ids)
         app_src = (root / 'app.py').read_text(encoding='utf8')
         self.assertIn("('127.0.0.1', 7867)", app_src)
